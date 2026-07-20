@@ -84,6 +84,35 @@ docker run --gpus all --ipc=host --rm -it \
 cd /workspace/artifixer
 ```
 
+### Pixi on Linux (RTX 4090 / Ada)
+
+This repository also includes a Pixi environment for CUDA 12.9 and Ada
+compute capability 8.9. It supports development and native-build validation on
+an RTX 4090. The released ArtiFixer 14B checkpoint does not fit in 24 GB VRAM
+with the current full-GPU inference path; use a larger GPU or add an explicit
+offloading/quantization implementation. The paper-scale 14B training recipe
+still requires the multi-GPU configuration described below.
+
+```bash
+pixi install -e default
+pixi run install-3dgrut
+pixi run install-artifixer
+pixi run install-moge
+CONDA_OVERRIDE_GLIBC=2.34 pixi install -e slang-runtime
+pixi run install-slangc
+pixi run smoke
+pixi run smoke-3dgrut
+```
+
+The bundled 3DGRUT dependency needs Slang. The official Slang 2026.5.2 binary
+requires glibc 2.34, so Pixi keeps that runtime in a separate
+`slang-runtime` environment and invokes only `slangc` with its loader. Python,
+PyTorch, and CUDA extensions continue to use the normal runtime.
+
+FlashAttention 3 and 4 are Hopper/Blackwell-specific in the supplied Docker
+configuration. On Ada, the codebase selects its automatic PyTorch SDPA path
+when these packages are absent.
+
 Download the release checkpoint from the [ArtiFixer Hugging Face repo](https://huggingface.co/nvidia/ArtiFixer):
 
 ```bash

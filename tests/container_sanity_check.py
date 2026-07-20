@@ -5,7 +5,13 @@
 """Sanity checks for the artifixer container."""
 
 import importlib
+import os
 import sys
+
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 
 def check(label, fn):
@@ -44,21 +50,30 @@ if torch.cuda.is_available():
 
 # ── FlashAttention ──
 print("\n=== FlashAttention ===")
+gpu_capability = torch.cuda.get_device_capability(0) if torch.cuda.is_available() else None
+gpu_major = gpu_capability[0] if gpu_capability is not None else None
+
+# The repository's FA3/FA4 builds target Hopper and Blackwell. Ada and older
+# GPUs correctly use the automatic PyTorch SDPA path selected by
+# model_training.net.transformer.
+if gpu_major is not None and gpu_major < 9:
+    print(f"  [SKIP] FA3/FA4 packages: sm_{gpu_capability[0]}{gpu_capability[1]} uses PyTorch SDPA fallback")
+else:
 # flash_attn namespace exists (created by FA4's flash_attn.cute) but has no __version__
 # when FA2 wheel is not separately installed — that's fine for H100/GB200 targets.
-check("flash_attn namespace", lambda: (__import__("flash_attn"), "importable (FA4 provides flash_attn.cute)")[1])
+    check("flash_attn namespace", lambda: (__import__("flash_attn"), "importable (FA4 provides flash_attn.cute)")[1])
 
 # FA3 - check both the package and the interface module
-if not check("flash_attn_3 package", lambda: __import__("flash_attn_3").__name__):
-    failures += 1
-if not check("flash_attn_interface (FA3 API)", lambda: (__import__("flash_attn_interface"), "importable")[1]):
-    failures += 1
+    if not check("flash_attn_3 package", lambda: __import__("flash_attn_3").__name__):
+        failures += 1
+    if not check("flash_attn_interface (FA3 API)", lambda: (__import__("flash_attn_interface"), "importable")[1]):
+        failures += 1
 
 # FA4
-fa4_ok = check("flash_attn.cute (FA4)", lambda: (importlib.import_module("flash_attn.cute"), "importable")[1])
-if not fa4_ok:
-    # FA4 might fail on non-Blackwell GPUs at import time - check if package is at least installed
-    check("flash-attn-4 installed (pip)", lambda: (importlib.metadata.version("flash-attn-4")))
+    fa4_ok = check("flash_attn.cute (FA4)", lambda: (importlib.import_module("flash_attn.cute"), "importable")[1])
+    if not fa4_ok:
+        # FA4 might fail on non-Blackwell GPUs at import time - check if package is at least installed
+        check("flash-attn-4 installed (pip)", lambda: (importlib.metadata.version("flash-attn-4")))
 
 # PyTorch FA backends
 try:
@@ -142,6 +157,7 @@ for pkg in [
     "torch_fidelity",
     "ftfy",
     "numpy",
+    "moge",
 ]:
     if not check(pkg, lambda p=pkg: (importlib.import_module(p), "importable")[1]):
         failures += 1
@@ -158,10 +174,7 @@ if not check(
 
 # ── Model training code imports ──
 print("\n=== Model Training Code Imports ===")
-import os
-
-repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-mt_path = os.path.join(repo_root, "model_training")
+mt_path = os.path.join(REPO_ROOT, "model_training")
 if os.path.exists(mt_path):
     for mod in [
         "model_training.utils.pose_utils",
